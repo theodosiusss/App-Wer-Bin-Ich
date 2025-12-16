@@ -4,6 +4,7 @@ import { socket } from "@/socket";
 export const useConnectionStore = defineStore("connection", {
     state: () => ({
         isConnected: false,
+        roomId: "",
     }),
 
     actions: {
@@ -16,9 +17,17 @@ export const useConnectionStore = defineStore("connection", {
                 this.isConnected = false;
             });
         },
-
         connect() {
             socket.connect();
-        }
+        },
+        disconnect() {
+          socket.disconnect();
+        },
+        joinRoom(roomId: string) {
+            socket.emit("joinRoom", roomId);
+        },
+        createRoom(roomId: string) {
+            socket.emit("createRoom", roomId);
+        },
     },
 });
