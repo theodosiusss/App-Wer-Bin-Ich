@@ -1,6 +1,15 @@
 import { reactive } from "vue";
 import { io } from "socket.io-client";
 
+function getUserId() {
+    let id = localStorage.getItem("userId");
+    if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem("userId", id);
+    }
+    return id;
+}
+
 // "undefined" means the URL will be computed from the `window.location` object
 const URL =
     import.meta.env.MODE === "production"
@@ -13,7 +22,12 @@ export const state = reactive({
     barEvents: [] as any[],
 });
 
-export const socket = io(URL);
+export const socket = io(URL,{
+    autoConnect: false,
+    auth: {
+        userId: getUserId(),
+    },
+});
 
 
 socket.on("connect", () => {

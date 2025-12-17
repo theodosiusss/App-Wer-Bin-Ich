@@ -5,10 +5,9 @@ import router from "@/router";
 
 const socket = useConnectionStore();
 const roomId = ref("");
+const name = ref("PenisLutscher");
 
 onMounted(() => {
-  socket.bindEvents();
-  socket.connect();
   if(socket.roomId){
     router.push("/"+socket.roomId);
   }
@@ -18,12 +17,11 @@ onMounted(() => {
 
 function joinRoom (){
   if(roomId.value){
-    socket.roomId = roomId.value;
-    router.push("/"+roomId.value)
+    socket.joinRoom(roomId.value, name.value);
   }
 }
 function createRoom (){
-  router.push("/"+"6767");
+  socket.createRoom(name.value);
 }
 </script>
 

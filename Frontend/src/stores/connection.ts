@@ -1,13 +1,60 @@
 import { defineStore } from "pinia";
 import { socket } from "@/socket";
+import router from "@/router";
 
 export const useConnectionStore = defineStore("connection", {
     state: () => ({
         isConnected: false,
         roomId: "",
+        name: "",
     }),
 
     actions: {
+
+        mount() {
+            // 1. LocalStorage lesen
+            const storedRoomId = localStorage.getItem("roomId");
+            const storedName = localStorage.getItem("name");
+
+            if (storedRoomId && storedName) {
+                this.roomId = storedRoomId;
+                this.name = storedName;
+            }
+
+            // 2. Events binden (nur einmal!)
+            this.bindEvents();
+
+            // 3. Socket verbinden
+            if (!socket.connected) {
+                socket.connect();
+            }
+
+            // 4. Reconnect / Rejoin
+            if (this.roomId && this.name) {
+                socket.emit("joinRoom", {
+                    roomId: this.roomId,
+                    name: this.name,
+                });
+            }
+        },
+
+        unMount() {
+            // 1. Persistieren
+            localStorage.setItem("roomId", this.roomId);
+            localStorage.setItem("name", this.name);
+
+            // 2. Listener entfernen
+            socket.off("connect");
+            socket.off("disconnect");
+            socket.off("joinedRoom");
+            socket.off("roomCreated");
+            socket.off("roomUsers");
+        },
+
+        /* ======================
+           SOCKET EVENTS
+           ====================== */
+
         bindEvents() {
             socket.on("connect", () => {
                 this.isConnected = true;
@@ -16,18 +63,47 @@ export const useConnectionStore = defineStore("connection", {
             socket.on("disconnect", () => {
                 this.isConnected = false;
             });
+
+            socket.on("joinedRoom", (args) => {
+                this.roomId = args.roomId;
+                this.name = args.name;
+                router.push("/" + this.roomId);
+            });
+
+            socket.on("roomCreated", (roomId) => {
+                socket.emit("joinRoom", {
+                    roomId,
+                    name: this.name,
+                });
+            });
+
+            socket.on("roomUsers", (args) => {
+                console.log(args);
+            });
         },
+
+        /* ======================
+           ACTIONS
+           ====================== */
+
         connect() {
             socket.connect();
         },
+
         disconnect() {
-          socket.disconnect();
+            socket.disconnect();
         },
-        joinRoom(roomId: string) {
-            socket.emit("joinRoom", roomId);
+
+        joinRoom(roomId: string, name: string) {
+            this.name = name;
+            this.roomId = roomId;
+
+            socket.emit("joinRoom", { roomId, name });
         },
-        createRoom(roomId: string) {
-            socket.emit("createRoom", roomId);
+
+        createRoom(name: string) {
+            this.name = name;
+            socket.emit("createRoom");
         },
     },
 });
