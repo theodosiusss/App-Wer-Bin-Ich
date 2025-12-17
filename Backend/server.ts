@@ -105,12 +105,14 @@ io.on('connection', (socket) => {
 
 
 
-    socket.on("leaveRoom", (roomId) => {
+    socket.on("leaveRoom", ({roomId}) => {
         const room = activeRooms.get(roomId);
+        console.log(roomId);
         if (!room) return;
 
         room.users.delete(userId);
         socket.leave(roomId);
+        socket.emit("leftRoom");
 
         if (room.users.size === 0) {
             activeRooms.delete(roomId);
@@ -165,18 +167,16 @@ io.on('connection', (socket) => {
             }
         }
     });
-    socket.on("closeRoom", (args) => {
-        const room = activeRooms.get(args.roomId);
+    socket.on("closeRoom", ({roomId}) => {
+        const room = activeRooms.get(roomId);
 
         if(room && room.creatorId === userId) {
-            io.to(args.roomId).emit("closedRoom");
-            activeRooms.delete(args.roomId);
+            io.to(roomId).emit("closedRoom");
+            activeRooms.delete(roomId);
             console.log("Room closed after close room");
         }
 
-    })
-
-
+    });
 });
 
 server.listen(3000, () => {

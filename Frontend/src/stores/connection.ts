@@ -1,5 +1,5 @@
-import { defineStore } from "pinia";
-import { socket } from "@/socket";
+import {defineStore} from "pinia";
+import {socket} from "@/socket";
 import router from "@/router";
 
 export const useConnectionStore = defineStore("connection", {
@@ -86,17 +86,23 @@ export const useConnectionStore = defineStore("connection", {
                 console.log(args);
             });
 
-            socket.on("roomNotFound",()=>{
+            socket.on("roomNotFound", () => {
                 this.roomId = "";
                 router.push("/");
                 console.log("room not found");
             });
-            socket.on("closedRoom",() => {
+            socket.on("closedRoom", () => {
                 this.roomId = "";
                 this.isAdmin = false;
                 localStorage.removeItem("roomId");
 
                 window.location.reload();
+            })
+            socket.on("leftRoom", () => {
+                this.roomId = "";
+                this.isAdmin = false;
+                localStorage.removeItem("roomId");
+                router.push("/");
             })
         },
 
@@ -116,7 +122,7 @@ export const useConnectionStore = defineStore("connection", {
             this.name = name;
             this.roomId = roomId;
 
-            socket.emit("joinRoom", { roomId, name });
+            socket.emit("joinRoom", {roomId, name});
         },
 
         createRoom(name: string) {
@@ -124,7 +130,13 @@ export const useConnectionStore = defineStore("connection", {
             socket.emit("createRoom");
         },
         closeRoom() {
-            socket.emit("closeRoom", {roomId: this.roomId});
+            const roomId = this.roomId;
+            socket.emit("closeRoom", {roomId});
+        },
+        leaveRoom() {
+            const roomId = this.roomId;
+            socket.emit("leaveRoom", {roomId});
+
         }
     },
 });

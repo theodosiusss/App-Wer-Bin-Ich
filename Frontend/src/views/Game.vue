@@ -22,6 +22,7 @@ onMounted(() => {
 
 <template>
   <button v-if="socket.isAdmin" @click="socket.closeRoom()">Raum Beenden</button>
+  <button v-else @click="socket.leaveRoom()">Raum Verlassen</button>
 
 </template>
 
