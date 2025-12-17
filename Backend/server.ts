@@ -17,10 +17,11 @@ type User = {
     name: string;
     socketId: string;
     online: boolean;
+    isAdmin: boolean;
 };
 
 type RoomUsers = Map<string, User>;
-const activeRooms = new Map<string, RoomUsers>();
+const activeRooms = new Map<string, {users: RoomUsers, creatorId: string} >();
 
 app.get('/', (req, res) => {
     res.send('<h1>Hello Goon</h1>');
@@ -47,7 +48,7 @@ io.on('connection', (socket) => {
                 break;
             }
         }
-        activeRooms.set(id, new Map());
+        activeRooms.set(id, {users: new Map(), creatorId: userId});
 
         console.log("Room created:", id);
         socket.emit("roomCreated", id);
@@ -62,10 +63,11 @@ io.on('connection', (socket) => {
 
         if (!room) {
             console.log("Room not found");
+            socket.emit("roomNotFound");
             return;
         }
 
-        const existing = room.get(userId);
+        const existing = room.users.get(userId);
 
         if (existing) {
             // 🔁 Rejoin
@@ -74,10 +76,12 @@ io.on('connection', (socket) => {
             existing.name = name;
         } else {
             // 🆕 First join
-            room.set(userId, {
+            const isAdmin = room.creatorId === userId;
+            room.users.set(userId, {
                 name,
                 socketId: socket.id,
                 online: true,
+                isAdmin: isAdmin,
             });
         }
 
@@ -85,14 +89,16 @@ io.on('connection', (socket) => {
         socket.emit("joinedRoom", {
             roomId,
             name,
+            isAdmin: room.users.get(userId).isAdmin,
         });
 
         io.to(roomId).emit("roomUsers", {
             roomId,
-            users: [...room.entries()].map(([uid, u]) => ({
+            users: [...room.users.entries()].map(([uid, u]) => ({
                 userId: uid,
                 name: u.name,
                 online: u.online,
+                isAdmin: u.isAdmin,
             })),
         });
     });
@@ -103,15 +109,15 @@ io.on('connection', (socket) => {
         const room = activeRooms.get(roomId);
         if (!room) return;
 
-        room.delete(userId);
+        room.users.delete(userId);
         socket.leave(roomId);
 
-        if (room.size === 0) {
+        if (room.users.size === 0) {
             activeRooms.delete(roomId);
         } else {
             io.to(roomId).emit("roomUsers", {
                 roomId,
-                users: Array.from(room.entries()).map(([userId, user]) => ({
+                users: Array.from(room.users.entries()).map(([userId, user]) => ({
                     userId,
                     name: user.name,
                 })),
@@ -123,19 +129,52 @@ io.on('connection', (socket) => {
     socket.on("disconnect", (reason) => {
         console.log("disconnect", userId, socket.id, reason);
 
-        for (const [, room] of activeRooms) {
-            const user = room.get(userId);
+        for (const [roomId, room] of activeRooms) {
+            const user = room.users.get(userId);
             if (!user) continue;
 
             if (user.socketId !== socket.id) continue;
 
             user.online = false;
-            user.socketId = undefined;
+            user.socketId = ""; // Use empty string instead of undefined for consistency
 
-            console.log(`User ${userId} ist jetzt offline`);
+            console.log(`User ${userId} is now offline in room ${roomId}`);
+
+            // Check if all users in this room are offline
+            const allUsersOffline = Array.from(room.users.values()).every(user => !user.online);
+
+            if (allUsersOffline) {
+                console.log(`All users in room ${roomId} are offline`);
+
+                setTimeout(() => {
+                    const roomStillExists = activeRooms.get(roomId);
+                    if (roomStillExists && Array.from(roomStillExists.users.values()).every(user => !user.online)) {
+                        activeRooms.delete(roomId);
+                        console.log(`Room ${roomId} deleted because all users are offline`);
+                    }
+                }, 5000);
+            } else {
+                io.to(roomId).emit("roomUsers", {
+                    roomId,
+                    users: Array.from(room.users.entries()).map(([uid, u]) => ({
+                        userId: uid,
+                        name: u.name,
+                        online: u.online,
+                    })),
+                });
+            }
         }
     });
+    socket.on("closeRoom", (args) => {
+        const room = activeRooms.get(args.roomId);
 
+        if(room && room.creatorId === userId) {
+            io.to(args.roomId).emit("closedRoom");
+            activeRooms.delete(args.roomId);
+            console.log("Room closed after close room");
+        }
+
+    })
 
 
 });

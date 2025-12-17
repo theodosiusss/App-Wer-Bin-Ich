@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import {onBeforeUnmount, onMounted, onUnmounted} from "vue";
+import {onBeforeMount, onBeforeUnmount, onMounted, onUnmounted} from "vue";
 import {useConnectionStore} from "@/stores/connection.ts";
 
 const socket = useConnectionStore();
-onMounted(() => {
+onBeforeMount(() => {
   socket.mount();
 })
 

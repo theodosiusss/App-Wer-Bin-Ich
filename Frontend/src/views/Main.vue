@@ -10,8 +10,8 @@ const name = ref("PenisLutscher");
 onMounted(() => {
   if(socket.roomId){
     router.push("/"+socket.roomId);
+    console.log(socket.roomId);
   }
-  console.log(socket.roomId);
 
 })
 

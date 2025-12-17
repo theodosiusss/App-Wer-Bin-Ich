@@ -7,6 +7,7 @@ export const useConnectionStore = defineStore("connection", {
         isConnected: false,
         roomId: "",
         name: "",
+        isAdmin: false,
     }),
 
     actions: {
@@ -67,6 +68,10 @@ export const useConnectionStore = defineStore("connection", {
             socket.on("joinedRoom", (args) => {
                 this.roomId = args.roomId;
                 this.name = args.name;
+                this.isAdmin = args.isAdmin;
+                console.log(args);
+                localStorage.setItem("roomId", this.roomId);
+                localStorage.setItem("name", this.name);
                 router.push("/" + this.roomId);
             });
 
@@ -80,6 +85,19 @@ export const useConnectionStore = defineStore("connection", {
             socket.on("roomUsers", (args) => {
                 console.log(args);
             });
+
+            socket.on("roomNotFound",()=>{
+                this.roomId = "";
+                router.push("/");
+                console.log("room not found");
+            });
+            socket.on("closedRoom",() => {
+                this.roomId = "";
+                this.isAdmin = false;
+                localStorage.removeItem("roomId");
+
+                window.location.reload();
+            })
         },
 
         /* ======================
@@ -105,5 +123,8 @@ export const useConnectionStore = defineStore("connection", {
             this.name = name;
             socket.emit("createRoom");
         },
+        closeRoom() {
+            socket.emit("closeRoom", {roomId: this.roomId});
+        }
     },
 });
