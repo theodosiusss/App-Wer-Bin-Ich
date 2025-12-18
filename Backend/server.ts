@@ -2,6 +2,7 @@ import express from 'express';
 import {createServer} from 'node:http';
 import {Server} from 'socket.io';
 import cors from 'cors';
+import * as trace_events from "node:trace_events";
 
 const app = express();
 const server = createServer(app);
@@ -21,7 +22,7 @@ type User = {
 };
 
 type RoomUsers = Map<string, User>;
-const activeRooms = new Map<string, {users: RoomUsers, creatorId: string} >();
+const activeRooms = new Map<string, {users: RoomUsers, creatorId: string, open: boolean} >();
 
 const broadcastRoomUsers = (roomId: string, userId?: string) => {
     const room = activeRooms.get(roomId);
@@ -56,6 +57,8 @@ io.on('connection', (socket) => {
     console.log("connected:", userId, socket.id);
 
 
+
+    // Rooms + socket + user handling (reconnects und so)
     socket.on('createRoom', () => {
         let id: string;
         while (true) {
@@ -67,7 +70,7 @@ io.on('connection', (socket) => {
                 break;
             }
         }
-        activeRooms.set(id, {users: new Map(), creatorId: userId});
+        activeRooms.set(id, {users: new Map(), creatorId: userId, open: true});
 
         console.log("Room created:", id);
         socket.emit("roomCreated", id);
@@ -85,8 +88,13 @@ io.on('connection', (socket) => {
             socket.emit("roomNotFound");
             return;
         }
-
         const existing = room.users.get(userId);
+
+        if(!room.open && !existing) {
+            console.log("Room not Open at: " + roomId);
+            socket.emit("roomNotOpen");
+            return;
+        }
 
         if (existing) {
             // 🔁 Rejoin
@@ -109,6 +117,7 @@ io.on('connection', (socket) => {
             roomId,
             name,
             isAdmin: room.users.get(userId).isAdmin,
+            open: room.open
         });
 
         broadcastRoomUsers(roomId, userId);
@@ -176,6 +185,23 @@ io.on('connection', (socket) => {
         }
 
     });
+
+
+
+    //Game Logik
+    socket.on("startGame", ({roomId}) => {
+        const room = activeRooms.get(roomId);
+        console.log("game started");
+        if(room && room.creatorId === userId) {
+            room.open = false;
+            io.to(roomId).emit("startedGame",roomId);
+        }
+    })
+
+
+
+
+
 });
 
 server.listen(3000, () => {

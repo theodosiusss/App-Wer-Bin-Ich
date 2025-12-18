@@ -16,6 +16,7 @@ export const useConnectionStore = defineStore("connection", {
         name: "",
         isAdmin: false,
         users: [] as User[],
+        gameIsStarted: false,
     }),
 
     actions: {
@@ -24,10 +25,12 @@ export const useConnectionStore = defineStore("connection", {
             // 1. LocalStorage lesen
             const storedRoomId = localStorage.getItem("roomId");
             const storedName = localStorage.getItem("name");
+            const storedGame = localStorage.getItem("gameIsStarted");
 
             if (storedRoomId && storedName) {
                 this.roomId = storedRoomId;
                 this.name = storedName;
+                this.gameIsStarted = storedGame == "true";
             }
 
             // 2. Events binden (nur einmal!)
@@ -51,6 +54,7 @@ export const useConnectionStore = defineStore("connection", {
             // 1. Persistieren
             localStorage.setItem("roomId", this.roomId);
             localStorage.setItem("name", this.name);
+            localStorage.setItem("gameIsStarted", ""+this.gameIsStarted);
 
             // 2. Listener entfernen
             socket.off("connect");
@@ -77,9 +81,11 @@ export const useConnectionStore = defineStore("connection", {
                 this.roomId = args.roomId;
                 this.name = args.name;
                 this.isAdmin = args.isAdmin;
+                this.gameIsStarted = !args.open;
                 console.log(args);
                 localStorage.setItem("roomId", this.roomId);
                 localStorage.setItem("name", this.name);
+                localStorage.setItem("gameIsStarted", ""+this.gameIsStarted);
                 router.push("/" + this.roomId);
             });
 
@@ -97,29 +103,41 @@ export const useConnectionStore = defineStore("connection", {
             });
 
             socket.on("roomNotFound", () => {
-                this.roomId = "";
-                localStorage.removeItem("roomId");
+                this.reset()
                 router.push("/");
                 console.log("room not found");
             });
+            socket.on("roomNotOpen",()=>{
+                this.reset()
+                router.push("/");
+                console.log("room not Open");
+            })
             socket.on("closedRoom", () => {
-                this.roomId = "";
-                this.isAdmin = false;
-                localStorage.removeItem("roomId");
-
+                this.reset()
                 window.location.reload();
             })
             socket.on("leftRoom", () => {
-                this.roomId = "";
-                this.isAdmin = false;
-                localStorage.removeItem("roomId");
+                this.reset()
                 router.push("/");
+            })
+            socket.on("startedGame", (roomId) =>
+            {
+                console.log("startedGame", roomId);
+                this.gameIsStarted = true;
+                localStorage.setItem("gameIsStarted", ""+this.gameIsStarted);
             })
         },
 
         /* ======================
            ACTIONS
            ====================== */
+        reset(){
+            this.roomId = "";
+            this.gameIsStarted = false;
+            this.isAdmin = false;
+            localStorage.removeItem("roomId");
+            localStorage.removeItem("gameIsStarted");
+        },
 
         connect() {
             socket.connect();
@@ -147,7 +165,9 @@ export const useConnectionStore = defineStore("connection", {
         leaveRoom() {
             const roomId = this.roomId;
             socket.emit("leaveRoom", {roomId});
-
+        },
+        startGame() {
+            socket.emit("startGame", {roomId: this.roomId});
         }
     },
 });

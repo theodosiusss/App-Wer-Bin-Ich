@@ -34,6 +34,8 @@ onMounted(() => {
 
   </div>
 
+  <button v-if="socket.isAdmin && !socket.gameIsStarted" @click="socket.startGame()">Start Game</button>
+
 </template>
 
 <style scoped>
