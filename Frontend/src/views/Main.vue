@@ -5,37 +5,62 @@ import router from "@/router";
 
 const socket = useConnectionStore();
 const roomId = ref("");
-const name = ref("PenisLutscher");
+const name = ref("");
 
 onMounted(() => {
-  if(socket.roomId){
-    router.push("/"+socket.roomId);
+  if (socket.roomId) {
+    router.push("/" + socket.roomId);
     console.log(socket.roomId);
   }
 
 })
 
-function joinRoom (){
-  if(roomId.value){
-    socket.joinRoom(roomId.value, name.value);
+function joinRoom() {
+  if (!name.value) {
+    name.value = "schlenispecker";
   }
+    if (roomId.value) {
+      socket.joinRoom(roomId.value, name.value);
+    }
+
+
 }
-function createRoom (){
-  socket.createRoom(name.value);
+
+function createRoom() {
+  if (!name.value) {
+    // fetch("https://usernameapiv1.vercel.app/api/random-usernames").then(res => res.json()).then(data => {
+    //   name.value = data.usernames[0];
+    //   if (name.value) {
+    //     socket.createRoom(name.value);
+    //   }
+    // }).catch(error => console.log(error));
+    name.value = "schlenispecker";
+
+
+  }
+    socket.createRoom(name.value);
+
+
 }
 </script>
 
 <template>
-  <h1>Wer bin ich sigma!!</h1>
+  <h1>Who am I </h1>
 
   <div>
-    <h2>Neuen Raum erstellen</h2>
-    <button @click="createRoom">Erstellen</button>
+    <h2>
+      Enter A Name
+    </h2>
+    <input v-model="name" type="text" required placeholder="your name"/>
   </div>
   <div>
-    <h2>Raum beitreten</h2>
-    <input placeholder="raum id" type="text" v-model="roomId">
-    <button @click="joinRoom">Beitreten</button>
+    <h2>Create New Room</h2>
+    <button @click="createRoom">Create</button>
+  </div>
+  <div>
+    <h2>Join Room</h2>
+    <input placeholder="room id " type="text" v-model="roomId">
+    <button @click="joinRoom">Join</button>
   </div>
 
 </template>

@@ -1,6 +1,13 @@
 import {defineStore} from "pinia";
 import {socket} from "@/socket";
 import router from "@/router";
+interface User {
+    isAdmin: boolean,
+    isYou: boolean,
+    online: boolean,
+    name: string
+    userId: string
+}
 
 export const useConnectionStore = defineStore("connection", {
     state: () => ({
@@ -8,6 +15,7 @@ export const useConnectionStore = defineStore("connection", {
         roomId: "",
         name: "",
         isAdmin: false,
+        users: [] as User[],
     }),
 
     actions: {
@@ -84,10 +92,13 @@ export const useConnectionStore = defineStore("connection", {
 
             socket.on("roomUsers", (args) => {
                 console.log(args);
+                this.users = args.users;
+                console.log(this.users);
             });
 
             socket.on("roomNotFound", () => {
                 this.roomId = "";
+                localStorage.removeItem("roomId");
                 router.push("/");
                 console.log("room not found");
             });

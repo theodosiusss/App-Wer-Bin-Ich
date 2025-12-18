@@ -23,6 +23,25 @@ type User = {
 type RoomUsers = Map<string, User>;
 const activeRooms = new Map<string, {users: RoomUsers, creatorId: string} >();
 
+const broadcastRoomUsers = (roomId: string, userId?: string) => {
+    const room = activeRooms.get(roomId);
+    if (!room) return;
+
+    const usersData = Array.from(room.users.entries()).map(([uid, user]) => ({
+        userId: uid,
+        name: user.name,
+        online: user.online,
+        isAdmin: user.isAdmin,
+        isYou: uid === userId
+    }));
+
+    io.to(roomId).emit("roomUsers", {
+        roomId,
+        users: usersData
+    });
+};
+
+
 app.get('/', (req, res) => {
     res.send('<h1>Hello Goon</h1>');
 });
@@ -92,15 +111,7 @@ io.on('connection', (socket) => {
             isAdmin: room.users.get(userId).isAdmin,
         });
 
-        io.to(roomId).emit("roomUsers", {
-            roomId,
-            users: [...room.users.entries()].map(([uid, u]) => ({
-                userId: uid,
-                name: u.name,
-                online: u.online,
-                isAdmin: u.isAdmin,
-            })),
-        });
+        broadcastRoomUsers(roomId, userId);
     });
 
 
@@ -117,13 +128,7 @@ io.on('connection', (socket) => {
         if (room.users.size === 0) {
             activeRooms.delete(roomId);
         } else {
-            io.to(roomId).emit("roomUsers", {
-                roomId,
-                users: Array.from(room.users.entries()).map(([userId, user]) => ({
-                    userId,
-                    name: user.name,
-                })),
-            });
+            broadcastRoomUsers(roomId, userId);
         }
 
         console.log(`User ${userId} left room ${roomId}`);
@@ -156,14 +161,8 @@ io.on('connection', (socket) => {
                     }
                 }, 5000);
             } else {
-                io.to(roomId).emit("roomUsers", {
-                    roomId,
-                    users: Array.from(room.users.entries()).map(([uid, u]) => ({
-                        userId: uid,
-                        name: u.name,
-                        online: u.online,
-                    })),
-                });
+                broadcastRoomUsers(roomId, userId);
+
             }
         }
     });
