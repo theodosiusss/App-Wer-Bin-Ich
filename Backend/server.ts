@@ -1,18 +1,29 @@
-import express from 'express';
-import {createServer} from 'node:http';
-import {Server} from 'socket.io';
-import cors from 'cors';
-import * as trace_events from "node:trace_events";
+import express from "express";
+import { createServer } from "node:http";
+import { Server } from "socket.io";
+import cors from "cors";
+import questions from "./questions.json";
+
+/* =======================
+   Setup
+======================= */
 
 const app = express();
 const server = createServer(app);
+
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173", // Adjust this to your frontend URL
+        origin: "http://localhost:5173",
         methods: ["GET", "POST"],
-        credentials: true
-    }
+        credentials: true,
+    },
 });
+
+app.use(cors());
+
+/* =======================
+   Types
+======================= */
 
 type User = {
     name: string;
@@ -21,8 +32,48 @@ type User = {
     isAdmin: boolean;
 };
 
+type Question = { question: string };
+
+type GameQuestion = {
+    question: string;
+    aboutUserId: string;
+    answeredByUserId: string;
+    answer?: string;
+};
+
+type PlayerQueue = {
+    questions: GameQuestion[];
+    currentIndex: number;
+    finished: boolean;
+};
+
 type RoomUsers = Map<string, User>;
-const activeRooms = new Map<string, {users: RoomUsers, creatorId: string, open: boolean} >();
+
+type RoomState = {
+    users: RoomUsers;
+    creatorId: string;
+    open: boolean;
+    playerQueues: Map<string, PlayerQueue>;
+};
+
+/* =======================
+   Data
+======================= */
+
+const questionsArray: string[] = (questions.questions as Question[]).map(
+    (q) => q.question
+);
+
+const activeRooms = new Map<string, RoomState>();
+
+/* =======================
+   Helpers
+======================= */
+
+const shuffle = <T>(array: T[]): T[] => [...array].sort(() => Math.random() - 0.5);
+
+const pickRandomQuestions = (count: number): string[] =>
+    shuffle(questionsArray).slice(0, count);
 
 const broadcastRoomUsers = (roomId: string, userId?: string) => {
     const room = activeRooms.get(roomId);
@@ -33,177 +84,267 @@ const broadcastRoomUsers = (roomId: string, userId?: string) => {
         name: user.name,
         online: user.online,
         isAdmin: user.isAdmin,
-        isYou: uid === userId
+        isYou: uid === userId,
     }));
 
     io.to(roomId).emit("roomUsers", {
         roomId,
-        users: usersData
+        users: usersData,
     });
 };
 
+/* =======================
+   Game Helpers
+======================= */
 
-app.get('/', (req, res) => {
-    res.send('<h1>Hello Goon</h1>');
+const sendNextQuestion = (roomId: string, userId: string) => {
+    const room = activeRooms.get(roomId);
+    if (!room) return;
+
+    const queue = room.playerQueues.get(userId);
+    if (!queue || queue.finished) return;
+
+    const q = queue.questions[queue.currentIndex];
+
+    // Player finished all questions
+    if (!q) {
+        queue.finished = true;
+
+        const allFinished = Array.from(room.playerQueues.values()).every(
+            (q) => q.finished
+        );
+
+        if (allFinished) {
+            console.log("===== GAME FINISHED =====");
+            console.log("Room:", roomId);
+
+            for (const [, pq] of room.playerQueues) {
+                for (const entry of pq.questions) {
+                    console.log({
+                        question: entry.question,
+                        answer: entry.answer,
+                        answeredBy: room.users.get(entry.answeredByUserId)?.name,
+                        aboutUser: room.users.get(entry.aboutUserId)?.name,
+                    });
+                }
+            }
+
+            console.log("===== END OF GAME =====");
+            io.to(roomId).emit("gameFinished");
+        }
+
+        return;
+    }
+
+    const answeredBy = room.users.get(userId);
+    const aboutUser = room.users.get(q.aboutUserId);
+    if (!answeredBy || !aboutUser) return;
+
+    io.to(answeredBy.socketId).emit("question", {
+        question: q.question,
+        aboutUserId: q.aboutUserId,
+        aboutUserName: aboutUser.name,
+        answeredByUserId: userId,
+        answeredByUserName: answeredBy.name,
+        index: queue.currentIndex,
+        total: queue.questions.length,
+    });
+};
+
+/* =======================
+   Routes
+======================= */
+
+app.get("/", (_, res) => {
+    res.send("<h1>Hello Goon</h1>");
 });
-io.on('connection', (socket) => {
+
+/* =======================
+   Socket Logic
+======================= */
+
+io.on("connection", (socket) => {
     const userId = socket.handshake.auth.userId;
 
     if (!userId) {
-        console.log("No userId, disconnect");
         socket.disconnect();
         return;
     }
+
     console.log("connected:", userId, socket.id);
 
+    /* ===== Create Room ===== */
 
+    socket.on("createRoom", () => {
+        let id = "";
 
-    // Rooms + socket + user handling (reconnects und so)
-    socket.on('createRoom', () => {
-        let id: string;
         while (true) {
             id = "";
             for (let i = 0; i < 6; i++) {
-                id += Math.floor(Math.random() * 9);
+                id += Math.floor(Math.random() * 10);
             }
-            if (!activeRooms.has(id)) {
-                break;
-            }
+            if (!activeRooms.has(id)) break;
         }
-        activeRooms.set(id, {users: new Map(), creatorId: userId, open: true});
 
-        console.log("Room created:", id);
+        activeRooms.set(id, {
+            users: new Map(),
+            creatorId: userId,
+            open: true,
+            playerQueues: new Map(),
+        });
+
         socket.emit("roomCreated", id);
-
-
-        console.log("room created mit id: " + id + " inhalte: " + activeRooms.get(id));
     });
 
+    /* ===== Join Room ===== */
 
     socket.on("joinRoom", ({ roomId, name }) => {
-        let room = activeRooms.get(roomId);
-
+        const room = activeRooms.get(roomId);
         if (!room) {
-            console.log("Room not found");
             socket.emit("roomNotFound");
             return;
         }
+
         const existing = room.users.get(userId);
 
-        if(!room.open && !existing) {
-            console.log("Room not Open at: " + roomId);
+        if (!room.open && !existing) {
             socket.emit("roomNotOpen");
             return;
         }
 
         if (existing) {
-            // 🔁 Rejoin
             existing.socketId = socket.id;
             existing.online = true;
             existing.name = name;
         } else {
-            // 🆕 First join
-            const isAdmin = room.creatorId === userId;
             room.users.set(userId, {
                 name,
                 socketId: socket.id,
                 online: true,
-                isAdmin: isAdmin,
+                isAdmin: room.creatorId === userId,
             });
         }
 
         socket.join(roomId);
+
         socket.emit("joinedRoom", {
             roomId,
             name,
-            isAdmin: room.users.get(userId).isAdmin,
-            open: room.open
+            isAdmin: room.users.get(userId)?.isAdmin,
+            open: room.open,
         });
 
         broadcastRoomUsers(roomId, userId);
     });
 
+    /* ===== Leave Room ===== */
 
-
-    socket.on("leaveRoom", ({roomId}) => {
+    socket.on("leaveRoom", ({ roomId }) => {
         const room = activeRooms.get(roomId);
-        console.log(roomId);
         if (!room) return;
 
         room.users.delete(userId);
+        room.playerQueues.delete(userId);
         socket.leave(roomId);
+
         socket.emit("leftRoom");
 
         if (room.users.size === 0) {
             activeRooms.delete(roomId);
         } else {
-            broadcastRoomUsers(roomId, userId);
+            broadcastRoomUsers(roomId);
         }
-
-        console.log(`User ${userId} left room ${roomId}`);
     });
-    socket.on("disconnect", (reason) => {
-        console.log("disconnect", userId, socket.id, reason);
 
+    /* ===== Disconnect ===== */
+
+    socket.on("disconnect", () => {
         for (const [roomId, room] of activeRooms) {
             const user = room.users.get(userId);
-            if (!user) continue;
-
-            if (user.socketId !== socket.id) continue;
+            if (!user || user.socketId !== socket.id) continue;
 
             user.online = false;
-            user.socketId = ""; // Use empty string instead of undefined for consistency
+            user.socketId = "";
 
-            console.log(`User ${userId} is now offline in room ${roomId}`);
-
-            // Check if all users in this room are offline
-            const allUsersOffline = Array.from(room.users.values()).every(user => !user.online);
-
-            if (allUsersOffline) {
-                console.log(`All users in room ${roomId} are offline`);
-
-                setTimeout(() => {
-                    const roomStillExists = activeRooms.get(roomId);
-                    if (roomStillExists && Array.from(roomStillExists.users.values()).every(user => !user.online)) {
-                        activeRooms.delete(roomId);
-                        console.log(`Room ${roomId} deleted because all users are offline`);
-                    }
-                }, 5000);
-            } else {
-                broadcastRoomUsers(roomId, userId);
-
-            }
+            broadcastRoomUsers(roomId);
         }
     });
-    socket.on("closeRoom", ({roomId}) => {
-        const room = activeRooms.get(roomId);
 
-        if(room && room.creatorId === userId) {
+    /* ===== Close Room ===== */
+
+    socket.on("closeRoom", ({ roomId }) => {
+        const room = activeRooms.get(roomId);
+        if (room && room.creatorId === userId) {
             io.to(roomId).emit("closedRoom");
             activeRooms.delete(roomId);
-            console.log("Room closed after close room");
         }
-
     });
 
+    /* =======================
+       Game Logic
+    ======================= */
 
-
-    //Game Logik
-    socket.on("startGame", ({roomId}) => {
+    socket.on("startGame", ({ roomId }) => {
         const room = activeRooms.get(roomId);
-        console.log("game started");
-        if(room && room.creatorId === userId) {
-            room.open = false;
-            io.to(roomId).emit("startedGame",roomId);
+        if (!room || room.creatorId !== userId) return;
+
+        room.open = false;
+        room.playerQueues.clear();
+
+        const userIds = Array.from(room.users.keys());
+
+        for (const answeredBy of userIds) {
+            const questionsForPlayer: GameQuestion[] = [];
+
+            for (const aboutUser of userIds) {
+                if (answeredBy === aboutUser) continue;
+
+                const qs = pickRandomQuestions(2);
+                for (const q of qs) {
+                    questionsForPlayer.push({
+                        question: q,
+                        aboutUserId: aboutUser,
+                        answeredByUserId: answeredBy,
+                    });
+                }
+            }
+
+            room.playerQueues.set(answeredBy, {
+                questions: shuffle(questionsForPlayer),
+                currentIndex: 0,
+                finished: false,
+            });
         }
-    })
 
+        io.to(roomId).emit("startedGame");
 
+        // Send first question to everyone
+        for (const uid of userIds) {
+            sendNextQuestion(roomId, uid);
+        }
+    });
 
+    socket.on("answerQuestion", ({ roomId, answer }) => {
+        const room = activeRooms.get(roomId);
+        if (!room) return;
 
+        const queue = room.playerQueues.get(userId);
+        if (!queue || queue.finished) return;
 
+        const q = queue.questions[queue.currentIndex];
+        if (!q) return;
+
+        q.answer = answer;
+        queue.currentIndex++;
+
+        sendNextQuestion(roomId, userId);
+    });
 });
 
+/* =======================
+   Start Server
+======================= */
+
 server.listen(3000, () => {
-    console.log('server running at http://localhost:3000');
+    console.log("server running at http://localhost:3000");
 });

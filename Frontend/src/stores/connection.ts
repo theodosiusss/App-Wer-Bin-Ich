@@ -17,6 +17,18 @@ export const useConnectionStore = defineStore("connection", {
         isAdmin: false,
         users: [] as User[],
         gameIsStarted: false,
+
+
+        currentQuestion: null as null | {
+            question: string
+            aboutUserId: string
+            aboutUserName: string
+            answeredByUserId: string
+            answeredByUserName: string
+            index: number
+        },
+        gameFinished: false,
+        results: [] as any[],
     }),
 
     actions: {
@@ -111,33 +123,49 @@ export const useConnectionStore = defineStore("connection", {
                 this.reset()
                 router.push("/");
                 console.log("room not Open");
-            })
+            });
             socket.on("closedRoom", () => {
                 this.reset()
                 window.location.reload();
-            })
+            });
             socket.on("leftRoom", () => {
                 this.reset()
                 router.push("/");
-            })
+            });
             socket.on("startedGame", (roomId) =>
             {
                 console.log("startedGame", roomId);
                 this.gameIsStarted = true;
                 localStorage.setItem("gameIsStarted", ""+this.gameIsStarted);
-            })
+            });
+            socket.on("question", (payload) => {
+                this.currentQuestion = payload;
+            });
+
+            socket.on("gameFinished", (results) => {
+                console.log("Game finished", results);
+                this.gameFinished = true;
+                this.results = results;
+                this.currentQuestion = null;
+            });
+
         },
 
         /* ======================
            ACTIONS
            ====================== */
-        reset(){
+        reset() {
             this.roomId = "";
             this.gameIsStarted = false;
             this.isAdmin = false;
+            this.currentQuestion = null;
+            this.gameFinished = false;
+            this.results = [];
+
             localStorage.removeItem("roomId");
             localStorage.removeItem("gameIsStarted");
         },
+
 
         connect() {
             socket.connect();
@@ -168,6 +196,16 @@ export const useConnectionStore = defineStore("connection", {
         },
         startGame() {
             socket.emit("startGame", {roomId: this.roomId});
-        }
+        },
+        answerQuestion(answer: string) {
+            if (!this.roomId) return;
+
+            socket.emit("answerQuestion", {
+                roomId: this.roomId,
+                answer,
+            });
+
+            this.currentQuestion = null;
+        },
     },
 });
