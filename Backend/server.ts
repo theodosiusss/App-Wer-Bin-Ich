@@ -1,6 +1,6 @@
 import express from "express";
-import { createServer } from "node:http";
-import { Server } from "socket.io";
+import {createServer} from "node:http";
+import {Server} from "socket.io";
 import cors from "cors";
 import questions from "./questions.json";
 
@@ -118,6 +118,8 @@ const sendNextQuestion = (roomId: string, userId: string) => {
             console.log("===== GAME FINISHED =====");
             console.log("Room:", roomId);
 
+            const answers = new Map<string, GameQuestion[]>();
+
             for (const [, pq] of room.playerQueues) {
                 for (const entry of pq.questions) {
                     console.log({
@@ -126,11 +128,14 @@ const sendNextQuestion = (roomId: string, userId: string) => {
                         answeredBy: room.users.get(entry.answeredByUserId)?.name,
                         aboutUser: room.users.get(entry.aboutUserId)?.name,
                     });
+                    const currentAnswers = answers.get(entry.aboutUserId) || [];
+                    currentAnswers.push(entry);
+                    answers.set(entry.aboutUserId, currentAnswers);
                 }
             }
-
-            console.log("===== END OF GAME =====");
-            io.to(roomId).emit("gameFinished");
+            console.log(answers);
+            io.to(roomId).emit("questionsFinished");
+            getAiProfiles(answers);
         }
 
         return;
@@ -150,6 +155,53 @@ const sendNextQuestion = (roomId: string, userId: string) => {
         total: queue.questions.length,
     });
 };
+
+const getAiProfiles = async (answers: Map<string, GameQuestion[]>) => {
+    const profiles = new Map<string, string>();
+
+    for (const [userId, questions] of answers) {
+        let prompt = "Generate a Person Profile based on these questions and answers. The profile should be about 60 words for a person aged 18-30. Describe their traits and personality without directly copying words from the answers. Do not assume gender.\n\n";
+
+        for (const question of questions) {
+            prompt += `Question: ${question.question}\n`;
+            prompt += `Answer: ${question.answer}\n\n`;
+        }
+
+        try {
+            // Correct POST request to the text API
+            const response = await fetch('https://text.pollinations.ai/openai', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messages: [
+                        { role: "system", content: "You are a creative profile writer." },
+                        { role: "user", content: prompt }
+                    ],
+                    model: "openai", // You can change this model[citation:7]
+                    stream: false,
+                    max_tokens: 120,  // Limit response length
+                    temperature: 0.7
+                }),
+            });
+
+            if (response.ok) {
+                const json = await response.json();
+                console.log(json);
+                const text = json.content;
+                profiles.set(userId, text);
+                console.log(`Profile for user ${userId}:`, text);
+            } else {
+                console.error(`API error for user ${userId}:`, response.status);
+                profiles.set(userId, "Failed to generate profile.");
+            }
+        } catch (error) {
+            console.error(`Request failed for user ${userId}:`, error);
+            profiles.set(userId, "Error connecting to AI service.");
+        }
+    }
+}
 
 /* =======================
    Routes
@@ -198,7 +250,7 @@ io.on("connection", (socket) => {
 
     /* ===== Join Room ===== */
 
-    socket.on("joinRoom", ({ roomId, name }) => {
+    socket.on("joinRoom", ({roomId, name}) => {
         const room = activeRooms.get(roomId);
         if (!room) {
             socket.emit("roomNotFound");
@@ -239,7 +291,7 @@ io.on("connection", (socket) => {
 
     /* ===== Leave Room ===== */
 
-    socket.on("leaveRoom", ({ roomId }) => {
+    socket.on("leaveRoom", ({roomId}) => {
         const room = activeRooms.get(roomId);
         if (!room) return;
 
@@ -272,7 +324,7 @@ io.on("connection", (socket) => {
 
     /* ===== Close Room ===== */
 
-    socket.on("closeRoom", ({ roomId }) => {
+    socket.on("closeRoom", ({roomId}) => {
         const room = activeRooms.get(roomId);
         if (room && room.creatorId === userId) {
             io.to(roomId).emit("closedRoom");
@@ -284,9 +336,9 @@ io.on("connection", (socket) => {
        Game Logic
     ======================= */
 
-    socket.on("startGame", ({ roomId }) => {
+    socket.on("startGame", ({roomId}) => {
         const room = activeRooms.get(roomId);
-        if (!room || room.creatorId !== userId) return;
+        if (!room || room.creatorId !== userId || room.users.size < 2) return;
 
         room.open = false;
         room.playerQueues.clear();
@@ -324,7 +376,7 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("answerQuestion", ({ roomId, answer }) => {
+    socket.on("answerQuestion", ({roomId, answer}) => {
         const room = activeRooms.get(roomId);
         if (!room) return;
 

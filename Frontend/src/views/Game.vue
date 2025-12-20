@@ -1,10 +1,19 @@
 <script setup lang="ts">
 import { useConnectionStore } from "@/stores/connection";
-import { ref } from "vue";
+import {onMounted, ref} from "vue";
 
 const socket = useConnectionStore();
 const answer = ref("");
-
+const props = defineProps({
+  roomId : String
+});
+onMounted(() => {
+  if(socket.roomId !== props.roomId) {
+    if(props.roomId) {
+      socket.joinRoom(props.roomId, "lenispecker")
+    }
+  }
+})
 function submitAnswer() {
   if (!answer.value) return;
   socket.answerQuestion(answer.value);
@@ -31,7 +40,7 @@ function submitAnswer() {
 
   <!-- Start game -->
   <button
-      v-if="socket.isAdmin && !socket.gameIsStarted"
+      v-if="socket.isAdmin && !socket.gameIsStarted && socket.users.length > 1"
       @click="socket.startGame()"
   >
     Start Game
