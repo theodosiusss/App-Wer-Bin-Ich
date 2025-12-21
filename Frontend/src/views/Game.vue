@@ -112,3 +112,53 @@ const userId = getUserId();
     <pre>{{ socket.results }}</pre>
   </div>
 </template>
+<style scoped>
+.user-list {
+  background: var(--bg-card);
+  padding: 1rem;
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-item:last-child {
+  border-bottom: none;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.question-box {
+  background: linear-gradient(145deg, #1e293b, #0f172a);
+  padding: 2rem;
+  border-radius: 16px;
+  border: 2px solid var(--primary);
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.score-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem;
+  background: var(--bg-card);
+  margin-bottom: 0.5rem;
+  border-radius: 8px;
+}
+
+img {
+  max-width: 100px;
+  display: block;
+  margin: 1rem auto;
+}
+</style>
