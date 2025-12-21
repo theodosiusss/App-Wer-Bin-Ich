@@ -97,7 +97,7 @@ const broadcastRoomUsers = (roomId: string, userId?: string) => {
    Game Helpers
 ======================= */
 
-const sendNextQuestion = (roomId: string, userId: string) => {
+const sendNextQuestion = async (roomId: string, userId: string) => {
     const room = activeRooms.get(roomId);
     if (!room) return;
 
@@ -135,7 +135,12 @@ const sendNextQuestion = (roomId: string, userId: string) => {
             }
             console.log(answers);
             io.to(roomId).emit("questionsFinished");
-            getAiProfiles(answers);
+           const profiles = await getAiProfiles(answers,roomId);
+           if(profiles){
+               io.to(roomId).emit("userProfiles", { profiles: Object.fromEntries(profiles) });
+           }else {
+               io.to(roomId).emit("userProfilesError");
+           }
         }
 
         return;
@@ -156,11 +161,11 @@ const sendNextQuestion = (roomId: string, userId: string) => {
     });
 };
 
-const getAiProfiles = async (answers: Map<string, GameQuestion[]>) => {
+const getAiProfiles = async (answers: Map<string, GameQuestion[]>, roomId: string) => {
     const profiles = new Map<string, string>();
 
     for (const [userId, questions] of answers) {
-        let prompt = "Generate a Person Profile based on these questions and answers. The profile should be about 60 words for a person aged 18-30. Describe their traits and personality without directly copying words from the answers. Do not assume gender.\n\n";
+        let prompt = "Generate a Person Profile based on these questions and answers. The profile should be about 60 words for a person aged 18-30, but dont mention the age in the profile. Describe their traits and personality without directly copying words from the answers. Do not assume gender.\n\n";
 
         for (const question of questions) {
             prompt += `Question: ${question.question}\n`;
@@ -169,7 +174,7 @@ const getAiProfiles = async (answers: Map<string, GameQuestion[]>) => {
 
         try {
             // Correct POST request to the text API
-            const response = await fetch('https://text.pollinations.ai/openai', {
+            const response = await fetch('https://text.pollinations.ai/', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -180,25 +185,27 @@ const getAiProfiles = async (answers: Map<string, GameQuestion[]>) => {
                         { role: "user", content: prompt }
                     ],
                     model: "openai", // You can change this model[citation:7]
-                    stream: false,
-                    max_tokens: 120,  // Limit response length
-                    temperature: 0.7
+                    max_tokens: 60,  // Limit response length
                 }),
             });
 
             if (response.ok) {
-                const json = await response.json();
-                console.log(json);
-                const text = json.content;
+                const text =  await response.text();
                 profiles.set(userId, text);
                 console.log(`Profile for user ${userId}:`, text);
+
+                if(profiles.size == activeRooms.get(roomId).users.size){
+                    return profiles;
+                }
             } else {
                 console.error(`API error for user ${userId}:`, response.status);
                 profiles.set(userId, "Failed to generate profile.");
+                return null;
             }
         } catch (error) {
             console.error(`Request failed for user ${userId}:`, error);
             profiles.set(userId, "Error connecting to AI service.");
+            return null;
         }
     }
 }

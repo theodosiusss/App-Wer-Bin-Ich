@@ -27,6 +27,8 @@ export const useConnectionStore = defineStore("connection", {
             answeredByUserName: string
             index: number
         },
+        questionsFinished: false,
+        profilesLoaded: false,
         gameFinished: false,
         results: [] as any[],
     }),
@@ -141,6 +143,20 @@ export const useConnectionStore = defineStore("connection", {
             socket.on("question", (payload) => {
                 this.currentQuestion = payload;
             });
+            socket.on("questionsFinished", ()=>{
+                this.questionsFinished = true;
+            })
+            socket.on("userProfiles",(args)=>{
+                this.profilesLoaded= true;
+                console.log("userProfiles",args);
+            })
+            socket.on("userProfilesError",()=>{
+                this.profilesLoaded= true;
+                alert("error while generating profiless, game is being stopped")
+                this.gameFinished = true;
+                this.currentQuestion = null;
+
+            })
 
             socket.on("gameFinished", (results) => {
                 console.log("Game finished", results);

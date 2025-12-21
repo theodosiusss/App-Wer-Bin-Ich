@@ -61,10 +61,18 @@ function submitAnswer() {
   </div>
 
   <!-- Waiting -->
-  <div v-if="socket.gameIsStarted && !socket.currentQuestion && !socket.gameFinished">
+  <div v-if="socket.gameIsStarted && !socket.currentQuestion && !socket.questionsFinished">
     <h2>You’re done 🎉 Waiting for others…</h2>
   </div>
 
+  <div v-if="socket.questionsFinished && !socket.gameFinished && !socket.profilesLoaded">
+    Generating Profiles
+    <img src="https://media1.tenor.com/m/WX_LDjYUrMsAAAAC/loading.gif" alt="loading icon">
+  </div>
+
+  <div v-if="socket.profilesLoaded && !socket.gameFinished">
+    <div>hawk tuah</div>
+  </div>
 
   <!-- Finished -->
   <div v-if="socket.gameFinished">
