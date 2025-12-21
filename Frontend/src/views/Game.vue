@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useConnectionStore } from "@/stores/connection";
 import {onMounted, ref} from "vue";
-
+import {getUserId} from "@/socket.ts";
 const socket = useConnectionStore();
 const answer = ref("");
 const props = defineProps({
@@ -10,7 +10,8 @@ const props = defineProps({
 onMounted(() => {
   if(socket.roomId !== props.roomId) {
     if(props.roomId) {
-      socket.joinRoom(props.roomId, "lenispecker")
+      socket.name = "penischelckr"
+      socket.joinRoom(props.roomId)
     }
   }
 })
@@ -19,6 +20,8 @@ function submitAnswer() {
   socket.answerQuestion(answer.value);
   answer.value = "";
 }
+const userId = getUserId();
+
 </script>
 
 <template>
@@ -33,7 +36,7 @@ function submitAnswer() {
       <span :style="{ color: user.online ? 'green' : 'gray' }">
         {{ user.name }}
       </span>
-      <span v-if="user.isYou"> (You)</span>
+      <span v-if="user.userId === userId"> (You)</span>
       <span v-if="user.isAdmin"> (Owner)</span>
     </div>
   </div>
@@ -61,18 +64,47 @@ function submitAnswer() {
   </div>
 
   <!-- Waiting -->
-  <div v-if="socket.gameIsStarted && !socket.currentQuestion && !socket.questionsFinished">
+  <div v-if="socket.gameIsStarted && !socket.currentQuestion && !socket.questionsFinished && socket.doneWithQuestions">
     <h2>You’re done 🎉 Waiting for others…</h2>
   </div>
 
-  <div v-if="socket.questionsFinished && !socket.gameFinished && !socket.profilesLoaded">
+  <div v-if="socket.questionsFinished && !socket.gameFinished && !socket.profilesError && !socket.votingActive">
     Generating Profiles
     <img src="https://media1.tenor.com/m/WX_LDjYUrMsAAAAC/loading.gif" alt="loading icon">
   </div>
 
-  <div v-if="socket.profilesLoaded && !socket.gameFinished">
-    <div>hawk tuah</div>
+  <div v-if="socket.profilesError">
+    error generating Profiles
   </div>
+
+  <div v-if="socket.votingActive && socket.currentProfile">
+    <h2>
+      Profile {{ socket.currentProfile.index }} / {{ socket.currentProfile.total }}
+    </h2>
+
+    <p>{{ socket.currentProfile.text }}</p>
+
+    <button
+        v-for="u in socket.votingUsers"
+        :key="u.userId"
+        @click="socket.vote(u.userId)"
+    >
+      {{ u.name }}
+    </button>
+  </div>
+
+  <div v-if="socket.gameFinished">
+    <h2>🏆 Scores</h2>
+
+    <div v-for="r in socket.results" :key="r.userId">
+      {{ r.name }} – {{ r.score }} Punkte
+    </div>
+
+
+    <button v-if="socket.isAdmin" @click="socket.cleanRoom">reset Room</button>
+  </div>
+
+
 
   <!-- Finished -->
   <div v-if="socket.gameFinished">

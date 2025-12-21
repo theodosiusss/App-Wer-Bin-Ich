@@ -1,7 +1,7 @@
 import { reactive } from "vue";
 import { io } from "socket.io-client";
 
-function getUserId() {
+export function getUserId() {
     let id = localStorage.getItem("userId");
     if (!id) {
         id = crypto.randomUUID();

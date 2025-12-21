@@ -3,21 +3,27 @@ import {socket} from "@/socket";
 import router from "@/router";
 interface User {
     isAdmin: boolean,
-    isYou: boolean,
     online: boolean,
     name: string
     userId: string
+}
+interface VoteUser {
+    name: string
+    userId: string
+}
+interface Profile{
+    userId: string,
+    description: string,
 }
 
 export const useConnectionStore = defineStore("connection", {
     state: () => ({
         isConnected: false,
         roomId: "",
-        name: "",
+        name: localStorage.getItem("name") || "",
         isAdmin: false,
         users: [] as User[],
         gameIsStarted: false,
-
 
         currentQuestion: null as null | {
             question: string
@@ -27,8 +33,16 @@ export const useConnectionStore = defineStore("connection", {
             answeredByUserName: string
             index: number
         },
+        doneWithQuestions: false,
         questionsFinished: false,
-        profilesLoaded: false,
+        profilesError: false,
+        votingActive: false,
+        currentProfile: null as null | {
+            text: string;
+            index: number;
+            total: number;
+        },
+        votingUsers: [] as VoteUser[],
         gameFinished: false,
         results: [] as any[],
     }),
@@ -40,11 +54,17 @@ export const useConnectionStore = defineStore("connection", {
             const storedRoomId = localStorage.getItem("roomId");
             const storedName = localStorage.getItem("name");
             const storedGame = localStorage.getItem("gameIsStarted");
+            const storedProfilesError = localStorage.getItem("profilesError");
+            const storedQuestionsFinished = localStorage.getItem("questionsFinished");
+            const storedGameFinished = localStorage.getItem("gameFinished");
 
             if (storedRoomId && storedName) {
                 this.roomId = storedRoomId;
                 this.name = storedName;
                 this.gameIsStarted = storedGame == "true";
+                this.profilesError = storedProfilesError == "true";
+                this.questionsFinished = storedQuestionsFinished == "true";
+                this.gameFinished = storedGameFinished == "true";
             }
 
             // 2. Events binden (nur einmal!)
@@ -69,6 +89,10 @@ export const useConnectionStore = defineStore("connection", {
             localStorage.setItem("roomId", this.roomId);
             localStorage.setItem("name", this.name);
             localStorage.setItem("gameIsStarted", ""+this.gameIsStarted);
+            localStorage.setItem("profilesError", ""+this.profilesError);
+            localStorage.setItem("questionsFinished", ""+this.questionsFinished);
+            localStorage.setItem("gameFinished", ""+this.gameFinished);
+
 
             // 2. Listener entfernen
             socket.off("connect");
@@ -127,8 +151,8 @@ export const useConnectionStore = defineStore("connection", {
                 console.log("room not Open");
             });
             socket.on("closedRoom", () => {
-                this.reset()
-                window.location.reload();
+                this.reset();
+                router.push("/");
             });
             socket.on("leftRoom", () => {
                 this.reset()
@@ -143,28 +167,46 @@ export const useConnectionStore = defineStore("connection", {
             socket.on("question", (payload) => {
                 this.currentQuestion = payload;
             });
+            socket.on("doneWithQuestions", () => {
+                this.currentQuestion = null;
+                this.doneWithQuestions = true;
+            })
             socket.on("questionsFinished", ()=>{
                 this.questionsFinished = true;
+                localStorage.setItem("questionsFinished", ""+this.questionsFinished);
             })
-            socket.on("userProfiles",(args)=>{
-                this.profilesLoaded= true;
+            socket.on("votingStarted",(args)=>{
+
                 console.log("userProfiles",args);
             })
             socket.on("userProfilesError",()=>{
-                this.profilesLoaded= true;
-                alert("error while generating profiless, game is being stopped")
+                this.profilesError= true;
+                localStorage.setItem("profilesError", ""+this.profilesError);
                 this.gameFinished = true;
+                localStorage.setItem("gameFinished", ""+this.gameFinished);
                 this.currentQuestion = null;
 
             })
-
-            socket.on("gameFinished", (results) => {
-                console.log("Game finished", results);
-                this.gameFinished = true;
-                this.results = results;
-                this.currentQuestion = null;
+            socket.on("voteStarted", (data) => {
+                this.votingActive = true;
+                this.currentProfile = {
+                    text: data.profileText,
+                    index: data.index,
+                    total: data.total,
+                };
+                this.votingUsers = data.users;
             });
 
+            socket.on("votingFinished", ({ results }) => {
+                this.votingActive = false;
+                this.gameFinished = true;
+                localStorage.setItem("gameFinished", ""+this.gameFinished);
+                this.results = results;
+            });
+            socket.on('cleanedRoom', (roomId) => {
+                this.reset()
+                this.joinRoom(roomId);
+            })
         },
 
         /* ======================
@@ -177,9 +219,16 @@ export const useConnectionStore = defineStore("connection", {
             this.currentQuestion = null;
             this.gameFinished = false;
             this.results = [];
+            this.profilesError = false;
+            this.questionsFinished = false;
+            this.doneWithQuestions = false;
 
             localStorage.removeItem("roomId");
             localStorage.removeItem("gameIsStarted");
+            localStorage.removeItem("profilesError");
+            localStorage.removeItem("questionsFinished");
+            localStorage.removeItem("gameFinished");
+
         },
 
 
@@ -191,15 +240,13 @@ export const useConnectionStore = defineStore("connection", {
             socket.disconnect();
         },
 
-        joinRoom(roomId: string, name: string) {
-            this.name = name;
+        joinRoom(roomId: string) {
             this.roomId = roomId;
 
-            socket.emit("joinRoom", {roomId, name});
+            socket.emit("joinRoom", {roomId, name: this.name});
         },
 
-        createRoom(name: string) {
-            this.name = name;
+        createRoom() {
             socket.emit("createRoom");
         },
         closeRoom() {
@@ -223,5 +270,15 @@ export const useConnectionStore = defineStore("connection", {
 
             this.currentQuestion = null;
         },
+        vote(guessedUserId: string) {
+            socket.emit("voteProfile", {
+                roomId: this.roomId,
+                guessedUserId,
+            });
+        },
+        cleanRoom() {
+            socket.emit("cleanRoom", {roomId: this.roomId});
+        }
+
     },
 });

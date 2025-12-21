@@ -49,11 +49,24 @@ type PlayerQueue = {
 
 type RoomUsers = Map<string, User>;
 
+type VoteRound = {
+    profileUserId: string;
+    votes: Map<string, string>; // voterId → guessedUserId
+};
+
+
 type RoomState = {
     users: RoomUsers;
     creatorId: string;
     open: boolean;
     playerQueues: Map<string, PlayerQueue>;
+    profiles: Map<string, string>;
+    votingIndex: number;
+    votingOrder: string[];
+    currentVote: VoteRound | null;
+    finalScores: Map<string, number>;
+    gameFinished: boolean;
+
 };
 
 /* =======================
@@ -83,9 +96,7 @@ const broadcastRoomUsers = (roomId: string, userId?: string) => {
         userId: uid,
         name: user.name,
         online: user.online,
-        isAdmin: user.isAdmin,
-        isYou: uid === userId,
-    }));
+        isAdmin: user.isAdmin}));
 
     io.to(roomId).emit("roomUsers", {
         roomId,
@@ -102,13 +113,20 @@ const sendNextQuestion = async (roomId: string, userId: string) => {
     if (!room) return;
 
     const queue = room.playerQueues.get(userId);
-    if (!queue || queue.finished) return;
+    if (!queue) return;
+    if (queue && queue.finished) {
+        const user = room.users.get(userId);
+        io.to(user.socketId).emit("doneWithQuestions");
+        return;
+    }
 
     const q = queue.questions[queue.currentIndex];
 
     // Player finished all questions
     if (!q) {
         queue.finished = true;
+        const user = room.users.get(userId);
+        io.to(user.socketId).emit("doneWithQuestions");
 
         const allFinished = Array.from(room.playerQueues.values()).every(
             (q) => q.finished
@@ -137,7 +155,17 @@ const sendNextQuestion = async (roomId: string, userId: string) => {
             io.to(roomId).emit("questionsFinished");
            const profiles = await getAiProfiles(answers,roomId);
            if(profiles){
-               io.to(roomId).emit("userProfiles", { profiles: Object.fromEntries(profiles) });
+               room.profiles = profiles;
+               room.votingOrder = shuffle(Array.from(profiles.keys()));
+               room.votingIndex = 0;
+               room.finalScores = new Map();
+               room.finalScores = new Map(
+                   Array.from(room.users.keys()).map(id => [id, 0])
+               );
+
+               startNextVote(roomId);
+
+
            }else {
                io.to(roomId).emit("userProfilesError");
            }
@@ -198,17 +226,84 @@ const getAiProfiles = async (answers: Map<string, GameQuestion[]>, roomId: strin
                     return profiles;
                 }
             } else {
-                console.error(`API error for user ${userId}:`, response.status);
+                console.error(`API error for user ${userId}:`, response);
                 profiles.set(userId, "Failed to generate profile.");
-                return null;
-            }
+                // das später erstzen
+                if(profiles.size == activeRooms.get(roomId).users.size){
+                    return profiles;
+                }            }
         } catch (error) {
             console.error(`Request failed for user ${userId}:`, error);
             profiles.set(userId, "Error connecting to AI service.");
-            return null;
+            // das später erstzen
+            if(profiles.size == activeRooms.get(roomId).users.size){
+                return profiles;
+            }
         }
     }
 }
+const startNextVote = (roomId: string) => {
+    const room = activeRooms.get(roomId);
+    if (!room) return;
+
+    if (room.votingIndex >= room.votingOrder.length) {
+        finishVoting(roomId);
+        return;
+    }
+
+    const profileUserId = room.votingOrder[room.votingIndex];
+
+    room.currentVote = {
+        profileUserId,
+        votes: new Map(),
+    };
+
+    io.to(roomId).emit("voteStarted", {
+        profileUserId,
+        profileText: room.profiles.get(profileUserId),
+        index: room.votingIndex + 1,
+        total: room.votingOrder.length,
+        users: Array.from(room.users.entries()).map(([id, u]) => ({
+            userId: id,
+            name: u.name,
+        })),
+    });
+};
+
+const finishVoting = (roomId: string) => {
+    const room = activeRooms.get(roomId);
+    if (!room) return;
+
+    console.log(room.finalScores);
+    room.gameFinished = true;
+
+    io.to(roomId).emit("votingFinished", {
+        results: Array.from(room.finalScores.entries()).map(([id, score]) => ({
+            userId: id,
+            name: room.users.get(id)?.name,
+            score,
+        })),
+    });
+    room.currentVote = null;
+};
+const emitCurrentVotingState = (roomId: string, socket: any) => {
+    const room = activeRooms.get(roomId);
+    if (!room || !room.currentVote) return;
+
+    const profileUserId = room.currentVote.profileUserId;
+
+    socket.emit("voteStarted", {
+        profileUserId,
+        profileText: room.profiles.get(profileUserId),
+        index: room.votingIndex + 1,
+        total: room.votingOrder.length,
+        users: Array.from(room.users.entries()).map(([id, u]) => ({
+            userId: id,
+            name: u.name,
+        })),
+    });
+};
+
 
 /* =======================
    Routes
@@ -250,6 +345,12 @@ io.on("connection", (socket) => {
             creatorId: userId,
             open: true,
             playerQueues: new Map(),
+            profiles: new Map<string,string>(),
+            votingIndex: 0,
+            finalScores: new Map(),
+            votingOrder: [],
+            currentVote: null,
+            gameFinished: false,
         });
 
         socket.emit("roomCreated", id);
@@ -286,6 +387,13 @@ io.on("connection", (socket) => {
 
         socket.join(roomId);
 
+        if(room.gameFinished){
+            finishVoting(roomId);
+        }
+        if (room.currentVote) {
+            emitCurrentVotingState(roomId, socket);
+        }
+
         socket.emit("joinedRoom", {
             roomId,
             name,
@@ -294,6 +402,7 @@ io.on("connection", (socket) => {
         });
 
         broadcastRoomUsers(roomId, userId);
+        sendNextQuestion(roomId, userId);
     });
 
     /* ===== Leave Room ===== */
@@ -398,6 +507,54 @@ io.on("connection", (socket) => {
 
         sendNextQuestion(roomId, userId);
     });
+
+
+    //vote logic
+
+    socket.on("voteProfile", ({ roomId, guessedUserId }) => {
+        const room = activeRooms.get(roomId);
+        if (!room || !room.currentVote) return;
+
+
+        if (room.currentVote.votes.has(userId)) return;
+
+        room.currentVote.votes.set(userId, guessedUserId);
+
+        // alle haben gevotet?
+        if (room.currentVote.votes.size === room.users.size) {
+            const correctUserId = room.currentVote.profileUserId;
+            for (const [voterId, guessedUserId] of room.currentVote.votes) {
+                if (guessedUserId === correctUserId) {
+                    room.finalScores.set(
+                        voterId,
+                        (room.finalScores.get(voterId) || 0) + 1
+                    );
+                }
+            }
+
+            room.votingIndex++;
+            setTimeout(() => startNextVote(roomId), 100);
+        }
+    });
+
+
+    // reset game stuff and make room reusable
+    socket.on("cleanRoom", ({roomId}) => {
+        const room = activeRooms.get(roomId);
+        if (room && room.creatorId === userId) {
+            room.gameFinished = false;
+            room.playerQueues.clear();
+            room.finalScores.clear();
+            room.currentVote = null;
+            room.profiles.clear();
+            room.votingOrder = [];
+            room.votingIndex = 0;
+            room.open = true;
+            io.to(roomId).emit("cleanedRoom", roomId);
+
+        }
+    });
+
 });
 
 /* =======================

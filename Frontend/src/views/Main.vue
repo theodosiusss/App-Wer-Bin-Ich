@@ -5,7 +5,6 @@ import router from "@/router";
 
 const socket = useConnectionStore();
 const roomId = ref("");
-const name = ref("");
 
 onMounted(() => {
   if (socket.roomId) {
@@ -16,29 +15,29 @@ onMounted(() => {
 })
 
 function joinRoom() {
-  if (!name.value) {
-    name.value = "schlenispecker";
+  if (!socket.name) {
+    socket.name = "schlenispecker";
   }
     if (roomId.value) {
-      socket.joinRoom(roomId.value, name.value);
+      socket.joinRoom(roomId.value);
     }
 
 
 }
 
 function createRoom() {
-  if (!name.value) {
+  if (!socket.name) {
     // fetch("https://usernameapiv1.vercel.app/api/random-usernames").then(res => res.json()).then(data => {
     //   name.value = data.usernames[0];
     //   if (name.value) {
     //     socket.createRoom(name.value);
     //   }
     // }).catch(error => console.log(error));
-    name.value = "schlenispecker";
+    socket.name = "schlenispecker";
 
 
   }
-    socket.createRoom(name.value);
+    socket.createRoom();
 
 
 }
@@ -51,7 +50,7 @@ function createRoom() {
     <h2>
       Enter A Name
     </h2>
-    <input v-model="name" type="text" required placeholder="your name"/>
+    <input v-model="socket.name" type="text" required placeholder="your name"/>
   </div>
   <div>
     <h2>Create New Room</h2>
