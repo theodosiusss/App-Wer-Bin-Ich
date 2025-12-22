@@ -1,25 +1,28 @@
 <script setup lang="ts">
-import { useConnectionStore } from "@/stores/connection";
+import {useConnectionStore} from "@/stores/connection";
 import {onMounted, ref} from "vue";
 import {getUserId} from "@/socket.ts";
+
 const socket = useConnectionStore();
 const answer = ref("");
 const props = defineProps({
-  roomId : String
+  roomId: String
 });
 onMounted(() => {
-  if(socket.roomId !== props.roomId) {
-    if(props.roomId) {
-      socket.name = "penischelckr"
+  if (socket.roomId !== props.roomId) {
+    if (props.roomId) {
+      socket.name = "pechvogel"
       socket.joinRoom(props.roomId)
     }
   }
 })
+
 function submitAnswer() {
   if (!answer.value) return;
   socket.answerQuestion(answer.value);
   answer.value = "";
 }
+
 const userId = getUserId();
 
 </script>
@@ -30,9 +33,9 @@ const userId = getUserId();
   <button v-else @click="socket.leaveRoom()">Leave Room</button>
 
   <!-- Users -->
-  <div v-if="socket.users.length">
+  <div v-if="socket.users.length" class="user-list">
     <h2>Active Users</h2>
-    <div v-for="user in socket.users" :key="user.userId">
+    <div v-for="user in socket.users" :key="user.userId" class="user-item">
       <span :style="{ color: user.online ? 'green' : 'gray' }">
         {{ user.name }}
       </span>
@@ -56,6 +59,7 @@ const userId = getUserId();
     <p>{{ socket.currentQuestion.question }}</p>
 
     <input
+        class="question-box"
         v-model="answer"
         placeholder="Your answer"
         @keyup.enter="submitAnswer"
@@ -88,6 +92,10 @@ const userId = getUserId();
         v-for="u in socket.votingUsers"
         :key="u.userId"
         @click="socket.vote(u.userId)"
+        :class="{
+  voted: socket.votedUserId && u.userId === socket.votedUserId,
+  'not-voted': socket.votedUserId && u.userId !== socket.votedUserId
+}" :disabled="!!socket.votedUserId"
     >
       {{ u.name }}
     </button>
@@ -96,7 +104,7 @@ const userId = getUserId();
   <div v-if="socket.gameFinished">
     <h2>🏆 Scores</h2>
 
-    <div v-for="r in socket.results" :key="r.userId">
+    <div class="score-item" v-for="r in socket.results" :key="r.userId">
       {{ r.name }} – {{ r.score }} Punkte
     </div>
 
@@ -105,12 +113,6 @@ const userId = getUserId();
   </div>
 
 
-
-  <!-- Finished -->
-  <div v-if="socket.gameFinished">
-    <h2>Game Finished 🎉</h2>
-    <pre>{{ socket.results }}</pre>
-  </div>
 </template>
 <style scoped>
 .user-list {
@@ -161,4 +163,14 @@ img {
   display: block;
   margin: 1rem auto;
 }
+
+.voted {
+  background-color: green;
+
+}
+
+.not-voted {
+  background-color: gray;
+}
+
 </style>

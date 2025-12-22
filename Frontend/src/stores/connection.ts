@@ -42,6 +42,7 @@ export const useConnectionStore = defineStore("connection", {
             index: number;
             total: number;
         },
+        votedUserId: null,
         votingUsers: [] as VoteUser[],
         gameFinished: false,
         results: [] as any[],
@@ -175,10 +176,6 @@ export const useConnectionStore = defineStore("connection", {
                 this.questionsFinished = true;
                 localStorage.setItem("questionsFinished", ""+this.questionsFinished);
             })
-            socket.on("votingStarted",(args)=>{
-
-                console.log("userProfiles",args);
-            })
             socket.on("userProfilesError",()=>{
                 this.profilesError= true;
                 localStorage.setItem("profilesError", ""+this.profilesError);
@@ -195,7 +192,12 @@ export const useConnectionStore = defineStore("connection", {
                     total: data.total,
                 };
                 this.votingUsers = data.users;
+                console.log(data.votedFor);
+                this.votedUserId = data.votedFor;
             });
+            socket.on("votedProfile", (data) => {
+                this.votedUserId = data.guessedUserId;
+            })
 
             socket.on("votingFinished", ({ results }) => {
                 this.votingActive = false;

@@ -16,7 +16,7 @@ onMounted(() => {
 
 function joinRoom() {
   if (!socket.name) {
-    socket.name = "schlenispecker";
+    socket.name = "loser";
   }
     if (roomId.value) {
       socket.joinRoom(roomId.value);
@@ -33,7 +33,7 @@ function createRoom() {
     //     socket.createRoom(name.value);
     //   }
     // }).catch(error => console.log(error));
-    socket.name = "schlenispecker";
+    socket.name = "loser";
 
 
   }

@@ -193,7 +193,7 @@ const getAiProfiles = async (answers: Map<string, GameQuestion[]>, roomId: strin
     const profiles = new Map<string, string>();
 
     for (const [userId, questions] of answers) {
-        let prompt = "Generate a Person Profile based on these questions and answers. The profile should be about 60 words for a person aged 18-30, but dont mention the age in the profile. Describe their traits and personality without directly copying words from the answers. Do not assume gender.\n\n";
+        let prompt = "Generate a Person Profile based on these questions and answers. The profile should be about 60 words for a person aged 18-30, but dont mention the age in the profile. Describe their traits and personality without directly using words from the answers or questions. Do not assume gender.\n\n";
 
         for (const question of questions) {
             prompt += `Question: ${question.question}\n`;
@@ -286,11 +286,13 @@ const finishVoting = (roomId: string) => {
     });
     room.currentVote = null;
 };
-const emitCurrentVotingState = (roomId: string, socket: any) => {
+const emitCurrentVotingState = (roomId: string, socket: any, userId: string) => {
     const room = activeRooms.get(roomId);
     if (!room || !room.currentVote) return;
 
     const profileUserId = room.currentVote.profileUserId;
+    const hasVoted = room.currentVote.votes.has(userId);
+    const votedFor = room.currentVote.votes.get(userId) ?? null;
 
     socket.emit("voteStarted", {
         profileUserId,
@@ -301,6 +303,8 @@ const emitCurrentVotingState = (roomId: string, socket: any) => {
             userId: id,
             name: u.name,
         })),
+        hasVoted,
+        votedFor
     });
 };
 
@@ -391,7 +395,7 @@ io.on("connection", (socket) => {
             finishVoting(roomId);
         }
         if (room.currentVote) {
-            emitCurrentVotingState(roomId, socket);
+            emitCurrentVotingState(roomId, socket,userId);
         }
 
         socket.emit("joinedRoom", {
@@ -519,6 +523,7 @@ io.on("connection", (socket) => {
         if (room.currentVote.votes.has(userId)) return;
 
         room.currentVote.votes.set(userId, guessedUserId);
+        socket.emit("votedProfile", {userId, guessedUserId});
 
         // alle haben gevotet?
         if (room.currentVote.votes.size === room.users.size) {
