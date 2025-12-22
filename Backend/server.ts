@@ -227,7 +227,7 @@ const getAiProfiles = async (answers: Map<string, GameQuestion[]>, roomId: strin
                 }
             } else {
                 console.error(`API error for user ${userId}:`, response);
-                profiles.set(userId, "Failed to generate profile.");
+                profiles.set(userId, "Firmly opinionated and cheerfully stubborn, they’ll champion an unlikely favorite from the natural world with missionary zeal. Warm-hearted, playful, and loyal, they bond fast and defend passions fiercely. Their confidence sometimes outruns caution, leading to impulsive decisions on late nights. Still, their enthusiasm is contagious, their humor easy, and their convictions worn proudly—especially anything that waddles.");
                 // das später erstzen
                 if(profiles.size == activeRooms.get(roomId).users.size){
                     return profiles;
@@ -471,7 +471,7 @@ io.on("connection", (socket) => {
             for (const aboutUser of userIds) {
                 if (answeredBy === aboutUser) continue;
 
-                const qs = pickRandomQuestions(2);
+                const qs = pickRandomQuestions(3);
                 for (const q of qs) {
                     questionsForPlayer.push({
                         question: q,
